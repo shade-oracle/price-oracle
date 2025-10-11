@@ -1,38 +1,38 @@
 use crate::*;
+use near_sdk_macros::NearSchema;
 
 pub type AssetId = String;
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, NearSchema)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Asset {
     pub reports: Vec<Report>,
     pub emas: Vec<AssetEma>,
 }
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, NearSchema)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Report {
     pub oracle_id: AccountId,
-    #[serde(with = "u64_dec_format")]
     pub timestamp: Timestamp,
     pub price: Price,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, NearSchema)]
 #[serde(crate = "near_sdk::serde")]
 pub struct AssetPrice {
     pub asset_id: AssetId,
     pub price: Price,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, NearSchema)]
 #[serde(crate = "near_sdk::serde")]
 pub struct AssetOptionalPrice {
     pub asset_id: AssetId,
     pub price: Option<Price>,
 }
 
-#[derive(BorshSerialize, BorshDeserialize)]
+#[derive(BorshSerialize, BorshDeserialize, NearSchema)]
 pub enum VAsset {
     V0(AssetV0),
     Current(Asset),
@@ -50,6 +50,15 @@ impl From<VAsset> for Asset {
 impl From<Asset> for VAsset {
     fn from(c: Asset) -> Self {
         VAsset::Current(c)
+    }
+}
+
+impl From<&VAsset> for Asset {
+    fn from(v: &VAsset) -> Self {
+        match v {
+            VAsset::V0(c) => c.clone().into(),
+            VAsset::Current(c) => c.clone(),
+        }
     }
 }
 
@@ -96,6 +105,6 @@ impl Contract {
     }
 
     pub fn internal_set_asset(&mut self, asset_id: &AssetId, asset: Asset) {
-        self.assets.insert(asset_id, &asset.into());
+        self.assets.insert(asset_id.clone(), asset.into());
     }
 }

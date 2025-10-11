@@ -1,15 +1,15 @@
 use crate::*;
 use std::cmp::Ordering;
+use near_sdk_macros::NearSchema;
 
 const MAX_U128_DECIMALS: u8 = 38;
 const MAX_VALID_DECIMALS: u8 = 77;
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Copy)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Copy, NearSchema)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
 #[serde(crate = "near_sdk::serde")]
 pub struct Price {
-    #[serde(with = "u128_dec_format")]
-    pub multiplier: Balance,
+    pub multiplier: u128,
     pub decimals: u8,
 }
 
@@ -64,47 +64,6 @@ impl Ord for Price {
     }
 }
 
-pub(crate) mod u128_dec_format {
-    use near_sdk::serde::de;
-    use near_sdk::serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(num: &u128, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&num.to_string())
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<u128, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        String::deserialize(deserializer)?
-            .parse()
-            .map_err(de::Error::custom)
-    }
-}
-
-pub(crate) mod u64_dec_format {
-    use near_sdk::serde::de;
-    use near_sdk::serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(num: &u64, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&num.to_string())
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<u64, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        String::deserialize(deserializer)?
-            .parse()
-            .map_err(de::Error::custom)
-    }
-}
 
 pub(crate) fn to_nano(ts: u32) -> Timestamp {
     Timestamp::from(ts) * 10u64.pow(9)
@@ -116,15 +75,20 @@ pub(crate) fn unordered_map_pagination<K, VV, V>(
     limit: Option<u64>,
 ) -> Vec<(K, V)>
 where
-    K: BorshSerialize + BorshDeserialize,
+    K: BorshSerialize + BorshDeserialize + Clone + Ord,
     VV: BorshSerialize + BorshDeserialize,
-    V: From<VV>,
+    V: From<VV> + for<'a> From<&'a VV>,
 {
-    let keys = m.keys_as_vector();
-    let values = m.values_as_vector();
-    let from_index = from_index.unwrap_or(0);
-    let limit = limit.unwrap_or(keys.len());
-    (from_index..std::cmp::min(keys.len(), from_index + limit))
-        .map(|index| (keys.get(index).unwrap(), values.get(index).unwrap().into()))
+    let keys: Vec<K> = m.keys().cloned().collect();
+    let from_index = from_index.unwrap_or(0) as usize;
+    let limit = limit.unwrap_or(keys.len() as u64) as usize;
+    let end_index = std::cmp::min(keys.len(), from_index + limit);
+    
+    (from_index..end_index)
+        .filter_map(|index| {
+            let key = keys.get(index)?;
+            let value = m.get(key)?;
+            Some((key.clone(), value.into()))
+        })
         .collect()
 }

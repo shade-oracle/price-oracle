@@ -13,21 +13,22 @@ pub use crate::oracle::*;
 pub use crate::utils::*;
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::collections::UnorderedMap;
+use near_sdk::store::UnorderedMap;
 use near_sdk::json_types::U128;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{
-    assert_one_yocto, env, ext_contract, log, near_bindgen, AccountId, Balance, BorshStorageKey,
-    Duration, Gas, PanicOnDefault, Promise, Timestamp, ONE_NEAR,
+    assert_one_yocto, env, ext_contract, log, near, AccountId, NearToken, Gas, BorshStorageKey,
+    Duration, Promise, Timestamp,
 };
+use near_sdk_macros::NearSchema;
 
-const NO_DEPOSIT: Balance = 0;
+const NO_DEPOSIT: NearToken = NearToken::from_yoctonear(0);
 
-const GAS_FOR_PROMISE: Gas = Gas(Gas::ONE_TERA.0 * 10);
+const GAS_FOR_PROMISE: Gas = Gas::from_tgas(10);
 
 const NEAR_CLAIM_DURATION: Duration = 24 * 60 * 60 * 10u64.pow(9);
 // This is a safety margin in NEAR for to cover potential extra storage.
-const SAFETY_MARGIN_NEAR_CLAIM: Balance = ONE_NEAR;
+const SAFETY_MARGIN_NEAR_CLAIM: NearToken = NearToken::from_near(1);
 
 pub type DurationSec = u32;
 
@@ -37,8 +38,7 @@ enum StorageKey {
     Assets,
 }
 
-#[near_bindgen]
-#[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
+#[near(contract_state)]
 pub struct Contract {
     pub oracles: UnorderedMap<AccountId, VOracle>,
 
@@ -48,25 +48,24 @@ pub struct Contract {
 
     pub owner_id: AccountId,
 
-    pub near_claim_amount: Balance,
+    pub near_claim_amount: NearToken,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, NearSchema)]
 #[serde(crate = "near_sdk::serde")]
 pub struct PriceData {
-    #[serde(with = "u64_dec_format")]
     pub timestamp: Timestamp,
     pub recency_duration_sec: DurationSec,
 
     pub prices: Vec<AssetOptionalPrice>,
 }
 
-#[ext_contract(ext_price_receiver)]
+#[ext_contract]
 pub trait ExtPriceReceiver {
     fn oracle_on_call(&mut self, sender_id: AccountId, data: PriceData, msg: String);
 }
 
-#[near_bindgen]
+#[near]
 impl Contract {
     #[init]
     pub fn new(
@@ -79,7 +78,7 @@ impl Contract {
             assets: UnorderedMap::new(StorageKey::Assets),
             recency_duration_sec,
             owner_id,
-            near_claim_amount: near_claim_amount.into(),
+            near_claim_amount: NearToken::from_yoctonear(near_claim_amount.into()),
         }
     }
 
@@ -115,7 +114,7 @@ impl Contract {
     }
 
     pub fn get_price_data(&self, asset_ids: Option<Vec<AssetId>>) -> PriceData {
-        let asset_ids = asset_ids.unwrap_or_else(|| self.assets.keys().collect());
+        let asset_ids = asset_ids.unwrap_or_else(|| self.assets.keys().cloned().collect());
         let timestamp = env::block_timestamp();
         let timestamp_cut = timestamp.saturating_sub(to_nano(self.recency_duration_sec));
         let min_num_recent_reports = std::cmp::max(1, (self.oracles.len() + 1) / 2) as usize;
@@ -165,7 +164,7 @@ impl Contract {
         asset_ids: Option<Vec<AssetId>>,
         recency_duration_sec: Option<DurationSec>,
     ) -> PriceData {
-        let asset_ids = asset_ids.unwrap_or_else(|| self.assets.keys().collect());
+        let asset_ids = asset_ids.unwrap_or_else(|| self.assets.keys().cloned().collect());
         let timestamp = env::block_timestamp();
         let recency_duration_sec = recency_duration_sec.unwrap_or(self.recency_duration_sec);
         let timestamp_cut = timestamp.saturating_sub(to_nano(recency_duration_sec));
@@ -206,9 +205,9 @@ impl Contract {
 
         if claim_near.unwrap_or(false) && oracle.last_near_claim + NEAR_CLAIM_DURATION <= timestamp
         {
-            let liquid_balance = env::account_balance() + env::account_locked_balance()
-                - env::storage_byte_cost() * u128::from(env::storage_usage());
-            if liquid_balance > self.near_claim_amount + SAFETY_MARGIN_NEAR_CLAIM {
+            let liquid_balance = env::account_balance().as_yoctonear() + env::account_locked_balance().as_yoctonear()
+                - env::storage_byte_cost().as_yoctonear() * u128::from(env::storage_usage());
+            if liquid_balance > (self.near_claim_amount.as_yoctonear() + SAFETY_MARGIN_NEAR_CLAIM.as_yoctonear()) {
                 oracle.last_near_claim = timestamp;
                 Promise::new(oracle_id.clone()).transfer(self.near_claim_amount);
             }
@@ -257,17 +256,28 @@ impl Contract {
 
         let sender_id = env::predecessor_account_id();
         let price_data = self.get_price_data(asset_ids);
-        let remaining_gas = env::prepaid_gas() - env::used_gas();
-        assert!(remaining_gas >= GAS_FOR_PROMISE);
+        let remaining_gas = env::prepaid_gas().as_gas() - env::used_gas().as_gas();
+        assert!(remaining_gas >= GAS_FOR_PROMISE.as_gas());
 
-        ext_price_receiver::oracle_on_call(
-            sender_id,
-            price_data,
-            msg,
-            receiver_id,
-            NO_DEPOSIT,
-            remaining_gas - GAS_FOR_PROMISE,
-        )
+        Promise::new(receiver_id)
+            .function_call(
+                "oracle_on_call".to_string(),
+                serde_json::to_vec(&(sender_id, price_data, msg)).unwrap(),
+                NO_DEPOSIT,
+                Gas::from_gas(remaining_gas - GAS_FOR_PROMISE.as_gas()),
+            )
+    }
+}
+
+impl Default for Contract {
+    fn default() -> Self {
+        Self {
+            oracles: UnorderedMap::new(StorageKey::Oracles),
+            assets: UnorderedMap::new(StorageKey::Assets),
+            recency_duration_sec: 0,
+            owner_id: "".parse().unwrap(),
+            near_claim_amount: NearToken::from_yoctonear(0),
+        }
     }
 }
 

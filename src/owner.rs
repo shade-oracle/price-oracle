@@ -1,7 +1,7 @@
 use crate::*;
 use near_sdk::json_types::U128;
 
-#[near_bindgen]
+#[near]
 impl Contract {
     #[payable]
     pub fn set_recency_duration_sec(&mut self, recency_duration_sec: DurationSec) {
@@ -75,14 +75,14 @@ impl Contract {
     }
 
     pub fn get_near_claim_amount(&self) -> U128 {
-        self.near_claim_amount.into()
+        U128::from(self.near_claim_amount.as_yoctonear())
     }
 
     #[payable]
     pub fn update_near_claim_amount(&mut self, near_claim_amount: U128) {
         assert_one_yocto();
         self.assert_owner();
-        self.near_claim_amount = near_claim_amount.into();
+        self.near_claim_amount = NearToken::from_yoctonear(near_claim_amount.into());
     }
 
     #[payable]

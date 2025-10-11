@@ -1,12 +1,12 @@
 use crate::*;
+use near_sdk_macros::NearSchema;
 
 const MAX_F64_FOR_PRECISE_MULTIPLIER: f64 = 1e30;
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, NearSchema)]
 #[serde(crate = "near_sdk::serde")]
 pub struct AssetEma {
     pub period_sec: DurationSec,
-    #[serde(with = "u64_dec_format")]
     pub timestamp: Timestamp,
     pub price: Option<Price>,
 }
