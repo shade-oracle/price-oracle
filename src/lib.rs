@@ -1,4 +1,5 @@
 mod asset;
+mod collateral;
 mod ema;
 mod legacy;
 mod oracle;
@@ -13,14 +14,16 @@ pub use crate::oracle::*;
 pub use crate::utils::*;
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::store::UnorderedMap;
+use near_sdk::store::{UnorderedMap, IterableSet};
 use near_sdk::json_types::U128;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{
-    assert_one_yocto, env, ext_contract, log, near, AccountId, NearToken, Gas, BorshStorageKey,
+    assert_one_yocto, env, ext_contract, log, near, require, AccountId, NearToken, Gas, BorshStorageKey,
     Duration, Promise, Timestamp,
 };
 use near_sdk_macros::NearSchema;
+use hex::{decode, encode};
+use dcap_qvl::verify;
 
 const NO_DEPOSIT: NearToken = NearToken::from_yoctonear(0);
 
@@ -36,6 +39,7 @@ pub type DurationSec = u32;
 enum StorageKey {
     Oracles,
     Assets,
+    ApprovedCodehashes,
 }
 
 #[near(contract_state)]
@@ -49,6 +53,8 @@ pub struct Contract {
     pub owner_id: AccountId,
 
     pub near_claim_amount: NearToken,
+
+    pub approved_codehashes: IterableSet<String>,
 }
 
 #[derive(Serialize, Deserialize, NearSchema)]
@@ -79,6 +85,7 @@ impl Contract {
             recency_duration_sec,
             owner_id,
             near_claim_amount: NearToken::from_yoctonear(near_claim_amount.into()),
+            approved_codehashes: IterableSet::new(StorageKey::ApprovedCodehashes),
         }
     }
 
@@ -200,6 +207,9 @@ impl Contract {
 
         // Oracle stats
         let mut oracle = self.internal_get_oracle(&oracle_id).expect("Not an oracle");
+        
+        // Require approved codehash for price reporting
+        self.require_approved_codehash(&oracle_id, &oracle);
         oracle.last_report = timestamp;
         oracle.price_reports += prices.len() as u64;
 
@@ -245,6 +255,49 @@ impl Contract {
         }
     }
 
+    pub fn register_agent(
+        &mut self,
+        quote_hex: String,
+        collateral: String,
+        checksum: String,
+        tcb_info: String,
+    ) -> bool {
+        let collateral_data = crate::collateral::get_collateral(collateral);
+        let quote = decode(quote_hex).unwrap();
+        let now = env::block_timestamp() / 1000000000;
+        let result = verify::verify(&quote, &collateral_data, now).expect("report is not verified");
+        let report = result.report.as_td10().unwrap();
+        let report_data = format!("{}", String::from_utf8_lossy(&report.report_data));
+
+        // verify the predecessor matches the report data
+        require!(
+            env::predecessor_account_id() == report_data,
+            format!("predecessor_account_id != report_data: {}", report_data)
+        );
+
+        let rtmr3 = encode(report.rt_mr3.to_vec());
+        let (shade_agent_api_image, shade_agent_app_image) =
+            crate::collateral::verify_codehash(tcb_info, rtmr3);
+
+        // verify the code hashes are approved
+        require!(self.approved_codehashes.contains(&shade_agent_api_image));
+        require!(self.approved_codehashes.contains(&shade_agent_app_image));
+
+        let predecessor = env::predecessor_account_id();
+        
+        // Check if oracle already exists
+        assert!(self.internal_get_oracle(&predecessor).is_none(), "Oracle already exists");
+        
+        // Create oracle with codehash information
+        let mut oracle = Oracle::new();
+        oracle.codehash = Some(shade_agent_app_image);
+        oracle.checksum = Some(checksum);
+        
+        self.internal_set_oracle(&predecessor, oracle);
+
+        true
+    }
+
     #[payable]
     pub fn oracle_call(
         &mut self,
@@ -277,6 +330,7 @@ impl Default for Contract {
             recency_duration_sec: 0,
             owner_id: "".parse().unwrap(),
             near_claim_amount: NearToken::from_yoctonear(0),
+            approved_codehashes: IterableSet::new(StorageKey::ApprovedCodehashes),
         }
     }
 }
@@ -284,5 +338,14 @@ impl Default for Contract {
 impl Contract {
     pub fn assert_well_paid(&self) {
         assert_one_yocto();
+    }
+
+    /// Will throw if oracle is not registered with a codehash in self.approved_codehashes
+    fn require_approved_codehash(&self, oracle_id: &AccountId, oracle: &Oracle) {
+        let codehash = oracle.codehash.as_ref().expect("Oracle must have approved codehash to report prices");
+        require!(
+            self.approved_codehashes.contains(codehash),
+            format!("Oracle {} codehash {} is not approved", oracle_id, codehash)
+        );
     }
 }

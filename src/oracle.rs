@@ -8,6 +8,9 @@ pub struct Oracle {
     pub price_reports: u64,
 
     pub last_near_claim: Timestamp,
+
+    pub codehash: Option<String>,
+    pub checksum: Option<String>,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, NearSchema)]
@@ -30,6 +33,8 @@ impl From<VOracle> for Oracle {
                 last_report: o.last_report,
                 price_reports: o.price_reports,
                 last_near_claim: 0,
+                codehash: None,
+                checksum: None,
             },
             VOracle::Current(c) => c,
         }
@@ -49,6 +54,8 @@ impl From<&VOracle> for Oracle {
                 last_report: o.last_report,
                 price_reports: o.price_reports,
                 last_near_claim: 0,
+                codehash: None,
+                checksum: None,
             },
             VOracle::Current(c) => c.clone(),
         }
@@ -61,6 +68,8 @@ impl Oracle {
             last_report: 0,
             price_reports: 0,
             last_near_claim: 0,
+            codehash: None,
+            checksum: None,
         }
     }
 }

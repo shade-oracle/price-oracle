@@ -91,6 +91,13 @@ impl Contract {
         self.assert_owner();
         self.owner_id = owner_id;
     }
+
+    #[payable]
+    pub fn approve_codehash(&mut self, codehash: String) {
+        assert_one_yocto();
+        self.assert_owner();
+        self.approved_codehashes.insert(codehash);
+    }
 }
 
 impl Contract {
