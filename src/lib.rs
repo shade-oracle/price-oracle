@@ -74,7 +74,8 @@ pub trait ExtPriceReceiver {
 #[near]
 impl Contract {
     #[init]
-    pub fn new(
+    #[private]
+    pub fn init(
         recency_duration_sec: DurationSec,
         owner_id: AccountId,
         near_claim_amount: U128,
