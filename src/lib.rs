@@ -14,7 +14,7 @@ pub use crate::oracle::*;
 pub use crate::utils::*;
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::store::{UnorderedMap, IterableSet};
+use near_sdk::store::{UnorderedMap, IterableSet, IterableMap};
 use near_sdk::json_types::U128;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{
@@ -42,6 +42,13 @@ enum StorageKey {
     ApprovedCodehashes,
 }
 
+#[near(serializers = [json, borsh])]
+#[derive(Clone)]
+pub struct Worker {
+    checksum: String,
+    codehash: String,
+}
+
 #[near(contract_state)]
 pub struct Contract {
     pub oracles: UnorderedMap<AccountId, VOracle>,
@@ -55,6 +62,8 @@ pub struct Contract {
     pub near_claim_amount: NearToken,
 
     pub approved_codehashes: IterableSet<String>,
+
+    pub worker_by_account_id: IterableMap<AccountId, Worker>,
 }
 
 #[derive(Serialize, Deserialize, NearSchema)]
@@ -76,17 +85,18 @@ impl Contract {
     #[init]
     #[private]
     pub fn init(
-        recency_duration_sec: DurationSec,
+        //recency_duration_sec: DurationSec,
         owner_id: AccountId,
-        near_claim_amount: U128,
+        //near_claim_amount: U128,
     ) -> Self {
         Self {
             oracles: UnorderedMap::new(StorageKey::Oracles),
             assets: UnorderedMap::new(StorageKey::Assets),
-            recency_duration_sec,
+            recency_duration_sec: 3600,
             owner_id,
-            near_claim_amount: NearToken::from_yoctonear(near_claim_amount.into()),
-            approved_codehashes: IterableSet::new(StorageKey::ApprovedCodehashes),
+            near_claim_amount: NearToken::from_yoctonear(1000000000000000000000000),
+            approved_codehashes: IterableSet::new(b"a"),
+            worker_by_account_id: IterableMap::new(b"b"),
         }
     }
 
@@ -299,6 +309,13 @@ impl Contract {
         true
     }
 
+    pub fn get_agent(&self, account_id: AccountId) -> Worker {
+        self.worker_by_account_id
+            .get(&account_id)
+            .expect("no worker found")
+            .to_owned()
+    }
+    
     #[payable]
     pub fn oracle_call(
         &mut self,
@@ -332,6 +349,7 @@ impl Default for Contract {
             owner_id: "".parse().unwrap(),
             near_claim_amount: NearToken::from_yoctonear(0),
             approved_codehashes: IterableSet::new(StorageKey::ApprovedCodehashes),
+            worker_by_account_id: IterableMap::new(b"b"),
         }
     }
 }

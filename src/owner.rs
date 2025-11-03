@@ -3,46 +3,45 @@ use near_sdk::json_types::U128;
 
 #[near]
 impl Contract {
-    #[payable]
+    //#[payable]
     pub fn set_recency_duration_sec(&mut self, recency_duration_sec: DurationSec) {
-        assert_one_yocto();
+        //assert_one_yocto();
         self.assert_owner();
         self.recency_duration_sec = recency_duration_sec;
     }
 
-    #[payable]
-    pub fn add_oracle(&mut self, account_id: AccountId) {
-        assert_one_yocto();
-        self.assert_owner();
-        assert!(self.internal_get_oracle(&account_id).is_none());
-        self.internal_set_oracle(&account_id, Oracle::new());
-    }
+    // //#[payable]
+    // pub fn add_oracle(&mut self, account_id: AccountId) {
+    //     assert_one_yocto();
+    //     self.assert_owner();
+    //     assert!(self.internal_get_oracle(&account_id).is_none());
+    //     self.internal_set_oracle(&account_id, Oracle::new());
+    // }
 
-    #[payable]
+    //#[payable]
     pub fn remove_oracle(&mut self, account_id: AccountId) {
-        assert_one_yocto();
+        //assert_one_yocto();
         self.assert_owner();
         assert!(self.oracles.remove(&account_id).is_some());
     }
 
-    #[payable]
+    //#[payable]
     pub fn add_asset(&mut self, asset_id: AssetId) {
-        assert_one_yocto();
         self.assert_owner();
         assert!(self.internal_get_asset(&asset_id).is_none());
         self.internal_set_asset(&asset_id, Asset::new());
     }
 
-    #[payable]
+    //#[payable]
     pub fn remove_asset(&mut self, asset_id: AssetId) {
-        assert_one_yocto();
+        //assert_one_yocto();
         self.assert_owner();
         assert!(self.assets.remove(&asset_id).is_some());
     }
 
-    #[payable]
+    //#[payable]
     pub fn add_asset_ema(&mut self, asset_id: AssetId, period_sec: DurationSec) {
-        assert_one_yocto();
+        //assert_one_yocto();
         self.assert_owner();
         let mut asset = self
             .internal_get_asset(&asset_id)
@@ -54,9 +53,9 @@ impl Contract {
         self.internal_set_asset(&asset_id, asset);
     }
 
-    #[payable]
+    //#[payable]
     pub fn remove_asset_ema(&mut self, asset_id: AssetId, period_sec: DurationSec) {
-        assert_one_yocto();
+        //assert_one_yocto();
         self.assert_owner();
         let mut asset = self
             .internal_get_asset(&asset_id)
@@ -78,23 +77,23 @@ impl Contract {
         U128::from(self.near_claim_amount.as_yoctonear())
     }
 
-    #[payable]
+    //#[payable]
     pub fn update_near_claim_amount(&mut self, near_claim_amount: U128) {
-        assert_one_yocto();
+        //assert_one_yocto();
         self.assert_owner();
         self.near_claim_amount = NearToken::from_yoctonear(near_claim_amount.into());
     }
 
-    #[payable]
+    //#[payable]
     pub fn update_owner_id(&mut self, owner_id: AccountId) {
-        assert_one_yocto();
+        //assert_one_yocto();
         self.assert_owner();
         self.owner_id = owner_id;
     }
 
-    #[payable]
+    //#[payable]
     pub fn approve_codehash(&mut self, codehash: String) {
-        assert_one_yocto();
+        //assert_one_yocto();
         self.assert_owner();
         self.approved_codehashes.insert(codehash);
     }
